@@ -12,25 +12,19 @@ import datetime
 import shutil
 import argparse
 import math
+import config
 
 
-PANEL_IP = "http://185.126.3.104:9090"
-PANEL_TAG = "test"
-INBOUNDS_ID=[1]
-print("Server IP:{}\nTag: {}".format(PANEL_IP, PANEL_TAG))
+PANEL_IP = config.PANEL_IP
+PANEL_TAG = config.PANEL_TAG
+MIN_USAGE_REPORT=config.MIN_USAGE_REPORT
+INBOUNDS_ID=config.INBOUNDS_ID
+BANDWITH_TYPE=config.BANDWITH_TYPE # i = dedicated , l = limted
+MAIN_SERVER_GROUPE = config.MAIN_SERVER_GROUPE
+MAIN_SERVER = config.MAIN_SERVER
+SERVER_ID = config.SERVER_ID
 
-
-MAIN_SERVER_GROUPE = 'y'
-# MAIN_SERVER_GROUPE='s'
-MAIN_SERVER = {
-    "y": "https://npanel4.karimiblog.ir",
-    # "s": "https://spanel.karimiblog.ir",
-}
-SERVER_ID = {
-    "y": list(range(20, 34)),
-    # "s": list(range(20,50)),
-}
-
+print("Server IP: {}\nTag: {}".format(PANEL_IP, PANEL_TAG))
 
 cookies = {
     # 'lang': 'en-US',
@@ -57,7 +51,6 @@ def transform(secrets, k):
     """
     transfer a list of secrets to a list of email and id 
     id -> shadow password
-
     email -> id_device_server
     """
     ss = []
@@ -67,10 +60,16 @@ def transform(secrets, k):
         tt = {}
         tt["email"] = str(ts["id"])+"_"+k
         tt["id"] = ts["shadow_password"]
-        tt["panel_id"] = ts["id"]
-        tt["total"] = (ts.get("total_quota_limit", 0) -
+        tt["server_id"] = ts["id"]
+
+        if BANDWITH_TYPE == "limted":
+            tt["total"] = (ts.get("total_quota_limit", 0) -
                        ts.get("used_total_quota", 0)) * 1024*1024
+        else:
+            tt["total"] = ts.get("total_quota_limit", 0)* 1024*1024
+        tt["totalGB"] = tt["total"] 
         tt["device"] = ts.get("device", 0)
+        tt["limitIp"] = ts.get("device", 0)
         tt["enable"] = True
         if (ts.get("deactivate", 0) != 0):
             tt["enable"] = False
@@ -82,9 +81,10 @@ def transform(secrets, k):
                 date_object = datetime.datetime.strptime(
                     ts["end_date"], "%Y-%m-%d %H:%M:%S")
                 tt["expiry_time"] = int(date_object.timestamp()*1000)
+            
         except Exception as e:
             print(e)
-
+        tt["expiryTime"]= tt["expiry_time"]
         ss.append(tt)
     return ss
 
@@ -97,8 +97,9 @@ def get_secrets():
         sid = ",".join(sid)
         try:
             logging.info("get secrets panel: %s server_id: %s".format(k, sid))
-            j = requests.get(
-                MAIN_SERVER[k]+"/api/shadow/config/temp?servers="+sid).json()
+            add= MAIN_SERVER[k]+"/api/shadow/config/temp?servers="+sid
+            print ("server: "+add)
+            j = requests.get(add).json()
             # MAIN_SERVER[k]+"/shadow/keys/"+str(sid)).json()
             secrets = secrets + transform(j, k)
 
@@ -114,7 +115,7 @@ def add_user(inbound_id, user):
             {
                 "id": user["id"],
                 "flow": "",
-                "email": user["email"],
+                "email": user["email"]+"_"+str(inbound_id),
                 "limitIp":user["device"],
                 "totalGB":user["total"],
                 "enable": user["enable"],
@@ -140,7 +141,7 @@ def update_user(inbound_id, user_panel, user_server):
             {
                 "id": user_server["id"],
                 "flow": "",
-                "email": user_server["email"],
+                "email": user_server["email"]+"_"+str(inbound_id),
                 "limitIp":user_server["device"],
                 "totalGB":user_server["total"],
                 "enable": user_server["enable"],
@@ -162,6 +163,27 @@ def update_user(inbound_id, user_panel, user_server):
     )
     print(response.text)
 
+def del_user(inbound_id, user):
+    """
+    Delete a user from the specified inbound panel.
+
+    Args:
+        inbound_id (str): The ID of the inbound panel.
+        user (dict): The user object to be deleted. (should be passed server user ti this user)
+
+    Returns:
+        None
+    """
+    print("delete: "+str(user))
+    response = requests.post(
+        '{}/panel/inbound/{}/delClient/{}'.format(
+            PANEL_IP, inbound_id, user["id"]),
+        cookies=cookies,
+        verify=False,
+    )
+    
+    print("delete: "+response.text)
+
 
 def get_user_list_from_panel():
 
@@ -170,17 +192,6 @@ def get_user_list_from_panel():
     j = response .json()
     return j.get("obj")[0]["clientStats"], json.loads(j.get("obj")[0]["settings"])["clients"]
 
-
-def del_user(inbound_id, user):
-
-    print("delete: "+str(user))
-    response = requests.post(
-        '{}/panel/inbound/{}/delClient/{}'.format(
-            PANEL_IP, inbound_id, user["id"]),
-        cookies=cookies,
-        verify=False,
-    )
-    print("delete: "+response.text)
 
 
 def update_user_trrafic(inbound_id, user):
@@ -233,55 +244,49 @@ def sync_users(inbound_id, users_server, users_panel, users_panel_with_details):
             index_ss = 0
             for s in users_server:
 
-                if ((s["email"] == p["email"] and k in p["email"]) or "test" in p["email"]):
+                if ((s["email"]+"_"+str(inbound_id) == p["email"] and k in p["email"]) or "test" in p["email"]):
                     find = True
                     break
                 index_ss = index_ss+1
-            user_panel_details = find_user_in_panel(
-                users_panel_with_details, p)
+            user_panel_details = find_user_in_panel(users_panel_with_details, p)
 
             if (find and user_panel_details != None):
-                time.sleep(0.5)
-                update_user(1, user_panel_details, s)
-                restart_traffic_on_panel(1, p)
+               
+                if (p["up"]+p["down"])/(1024*1024) > MIN_USAGE_REPORT:
+                    restart_traffic_on_panel(inbound_id, p)
+                    time.sleep(0.1)
+               
+                if ( s["total"] != p["total"] or s["expiryTime"] != p["expiryTime"] or s["device"] != user_panel_details["limitIp"]):
+                    print("update: True -->"+str(user_panel_details))
+                    update_user(inbound_id, user_panel_details, s)
+                   
+                else:
+                    print("update: False -->"+str(user_panel_details))
                 ss.remove(s)
-                print("update:"+str(user_panel_details))
+                
             elif (user_panel_details != None):
-                del_user(1, user_panel_details)
+                del_user(inbound_id, user_panel_details)
                 print("del:"+str(user_panel_details))
             i = i+1
             print("loding: {} % ".format(i*100/len(pss)))
             print("============================")
         for s in users_server:
-            add_user(1, s)
+            add_user(inbound_id, s)
 
-    '''
-    while  len(users_server) !=  0 and  len(users_panel_with_details) != 0:
-        user_panel_details = users_panel_with_details.pop()
-        s = users_server.pop()
-        p = users_panel.pop()
-        update_user(inbound_id,user_panel_details,s)
-        restart_traffic_on_panel(inbound_id,p)
-        # users_panel.remove(p)
-        # users_server.remove(s)
-        # users_panel_with_details.remove(user_panel_details)
 
-    if  len(users_server) > len(users_panel_with_details):
-        for s in  users_server :
-             add_user(inbound_id,s)
-    elif  len(users_server) < len(users_panel_with_details):
-        for p in users_panel_with_details:
-            del_user(inbound_id,p)
-    '''
+def reset_traffic_all_users():
+    response = requests.post('{}/panel/inbound/resetAllClientTraffics/-1'.format(
+            PANEL_IP), cookies=cookies,verify=False)
+    print("reset all traffic: "+response.text)
 
 
 def update_trrafic_on_server(inbound_id, panel_users):
 
     print("update trrafic on server")
-    return True
+    #return True  #debug
     user_list = []
     for p in panel_users:
-        if (p["up"]+p["down"])/(1024*1024) > 1:
+        if (p["up"]+p["down"])/(1024*1024) > MIN_USAGE_REPORT:
             user = {
                 "id": p["email"],
                 "total": math.floor((p["up"]+p["down"])/(1024*1024)),
@@ -300,23 +305,39 @@ def update_trrafic_on_server(inbound_id, panel_users):
     }
     response = requests.request("POST", url, headers=headers, data=payload)
 
-    print(response.text)
+    print("=========\n"+response.text+"\n=========")
     return "update" == response.text
 
 
-def verify(users_server, users_panel):
+def verify(inbound_id, users_server, users_panel):
     for s in users_server:
         find = True
 
         for p in users_panel:
-            if s["email"] == p["email"]:
+            if s["email"]+"_"+str(inbound_id) == p["email"]:
                 find = True
                 break
             else:
                 find = False
         if find == False:
             print(p)
-            add_user(1, s)
+            add_user(inbound_id, s)
+            ss.remove(s)
+
+def verifyExpired(inbound_id, users_server, users_panel):
+    for p in users_panel:
+        find = True
+
+        for s in users_server:
+            if s["email"]+"_"+str(inbound_id) == p["email"]:
+                find = True
+                break
+            else:
+                find = False
+        if find == False:
+            print("del user -->"+str(p))
+            time.sleep(0.5)
+            del_user(inbound_id, s)
             ss.remove(s)
 
 
@@ -327,12 +348,11 @@ if __name__ == '__main__':
     parser.add_argument('--uu', choices=['true', 'false'], default="true") # just update users
     args = parser.parse_args()
     sl=random.randint(5,10)
-    print (f"sleeping for {sl}")
+    print (f"Sleeping for {sl}")
     time.sleep(sl)
     
     login()
     
-
     ss = get_secrets()
     ps, pss = get_user_list_from_panel()
 
@@ -340,12 +360,14 @@ if __name__ == '__main__':
         print ("error in panel")
         exit(1)
 
-    if (args.ut == "true"):
+    if (args.ut == "true" ):
         update_trrafic_on_server(1, ps)
+        reset_traffic_all_users()
 
     if (args.uu == "true"):
         sync_users(1, ss, ps, pss)
         login()
         ss = get_secrets()
         ps, pss = get_user_list_from_panel()
-        verify(ss, ps)
+        verify(1,ss, ps)
+        verifyExpired(1,ss, ps)
