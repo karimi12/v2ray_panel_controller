@@ -58,7 +58,7 @@ LOGGING = {
 }
 
 logging.config.dictConfig(LOGGING)
-logger = logging.getLogger(f'v2ray_trrafic_{HOSTNAME}')
+logger = logging.getLogger(f'v2ray_trrafic')
 
 # extra_fields = {"hostname":"bar","counter":1}
 # logger.addFilter(ExtraFieldsLogFilter(extra_fields))

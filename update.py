@@ -16,16 +16,20 @@ import config
 import log
 
 
+# VERSION = 11
 PANEL_IP = config.PANEL_IP
 PANEL_TAG = config.PANEL_TAG
-MIN_USAGE_REPORT=config.MIN_USAGE_REPORT
-INBOUNDS_IDS=config.INBOUNDS_IDS
-BANDWITH_TYPE=config.BANDWITH_TYPE # i = dedicated , l = limted
+MIN_USAGE_REPORT = config.MIN_USAGE_REPORT
+INBOUNDS_IDS = config.INBOUNDS_IDS
+INBOUNDS_FLOW = config.INBOUNDS_FLOW
+BANDWITH_TYPE = config.BANDWITH_TYPE  # i = dedicated , l = limted
 MAIN_SERVER_GROUPE = config.MAIN_SERVER_GROUPE
 MAIN_SERVER = config.MAIN_SERVER
 SERVER_ID = config.SERVER_ID
 
-print("\nServer IP: {}\nTag: {}\nServers ID:".format(PANEL_IP, PANEL_TAG,str(SERVER_ID)))
+
+print("\nServer IP: {}\nTag: {}\nServers ID:".format(
+    PANEL_IP, PANEL_TAG, str(SERVER_ID)))
 
 cookies = {
     # 'lang': 'en-US',
@@ -55,7 +59,7 @@ def transform(secrets, k):
     email -> id_device_server
     """
     ss = []
-   
+
     for ts in secrets:
 
         tt = {}
@@ -65,10 +69,11 @@ def transform(secrets, k):
 
         if BANDWITH_TYPE == "limted":
             tt["total"] = (ts.get("total_quota_limit", 0) -
-                       ts.get("used_total_quota", 0)) * 1024*1024
+                           
+                           ts.get("used_total_quota", 0)) * 1024*1024
         else:
-            tt["total"] = ts.get("total_quota_limit", 0)* 1024*1024
-        tt["totalGB"] = tt["total"] 
+            tt["total"] = ts.get("total_quota_limit", 0) * 1024*1024
+        tt["totalGB"] = tt["total"]
         # tt["device"] = ts.get("device", 0)
         tt["device"] = 0
         tt["limitIp"] = ts.get("device", 0)
@@ -83,10 +88,10 @@ def transform(secrets, k):
                 date_object = datetime.datetime.strptime(
                     ts["end_date"], "%Y-%m-%d %H:%M:%S")
                 tt["expiry_time"] = int(date_object.timestamp()*1000)
-            
+
         except Exception as e:
             print(e)
-        tt["expiryTime"]= tt["expiry_time"]
+        tt["expiryTime"] = tt["expiry_time"]
         ss.append(tt)
     return ss
 
@@ -99,8 +104,8 @@ def get_secrets():
         sid = ",".join(sid)
         try:
             logging.info("get secrets panel: %s server_id: %s".format(k, sid))
-            add= MAIN_SERVER[k]+"/api/shadow/config/temp?servers="+sid
-            print ("server: "+add)
+            add = MAIN_SERVER[k]+"/api/shadow/config/temp?servers="+sid
+            print("server: "+add)
             j = requests.get(add).json()
             # MAIN_SERVER[k]+"/shadow/keys/"+str(sid)).json()
             secrets = secrets + transform(j, k)
@@ -110,13 +115,13 @@ def get_secrets():
     return secrets
 
 
-def add_user(inbound_id, user):
+def add_user(inbound_id, user, inbound_flow=""):
 
     c = {
         "clients": [
             {
                 "id": user["id"],
-                "flow": "",
+                "flow": inbound_flow,
                 "email": user["email"]+"_"+str(inbound_id),
                 "limitIp":user["device"],
                 "totalGB":user["total"],
@@ -134,7 +139,7 @@ def add_user(inbound_id, user):
     print(response.text)
 
 
-def update_user(inbound_id, user_panel, user_server):
+def update_user(inbound_id, user_panel, user_server, inbound_flow=""):
 
     # print("update user: "+str(user_panel))
 
@@ -142,7 +147,7 @@ def update_user(inbound_id, user_panel, user_server):
         "clients": [
             {
                 "id": user_server["id"],
-                "flow": "",
+                "flow": inbound_flow,
                 "email": user_server["email"]+"_"+str(inbound_id),
                 "limitIp":user_server["device"],
                 "totalGB":user_server["total"],
@@ -165,6 +170,7 @@ def update_user(inbound_id, user_panel, user_server):
     )
     print(response.text)
 
+
 def del_user(inbound_id, user):
     """
     Delete a user from the specified inbound panel.
@@ -183,7 +189,7 @@ def del_user(inbound_id, user):
         cookies=cookies,
         verify=False,
     )
-    
+
     print("delete: "+response.text)
 
 
@@ -193,7 +199,6 @@ def get_user_list_from_panel(inbound_id):
         '{}/panel/inbound/list'.format(PANEL_IP), cookies=cookies, verify=False)
     j = response .json()
     return j.get("obj")[inbound_id-1]["clientStats"], json.loads(j.get("obj")[inbound_id-1]["settings"])["clients"]
-
 
 
 # def update_user_trrafic(inbound_id, user):
@@ -229,13 +234,12 @@ def restart_traffic_on_panel(inbound_id, user):
 
 def restart_traffic_on_panel_user_by_user(inbound_id, users_panel):
 
-
     for p in users_panel:
         if (p["up"]+p["down"])/(1024*1024) > MIN_USAGE_REPORT:
             restart_traffic_on_panel(inbound_id, p)
             print("reset traffic: "+str(p))
             time.sleep(2)
-        
+
         if (p["up"]+p["down"])/(1024*1024) > MIN_USAGE_REPORT*10:
             print("*** WARNING: "+str(p))
 
@@ -263,22 +267,24 @@ def sync_users(inbound_id, users_server, users_panel, users_panel_with_details):
                     find = True
                     break
                 index_ss = index_ss+1
-            user_panel_details = find_user_in_panel(users_panel_with_details, p)
+            user_panel_details = find_user_in_panel(
+                users_panel_with_details, p)
 
             if (find and user_panel_details != None):
-               
+
                 if (p["up"]+p["down"])/(1024*1024) > MIN_USAGE_REPORT:
                     restart_traffic_on_panel(inbound_id, p)
                     time.sleep(0.1)
-               
-                if ( s["id"] != user_panel_details ["id"] or s["total"] != p["total"] or s["expiryTime"] != p["expiryTime"] or s["device"] != user_panel_details["limitIp"]):
+
+                if (s["id"] != user_panel_details["id"] or s["total"] != p["total"] or s["expiryTime"] != p["expiryTime"] or s["device"] != user_panel_details["limitIp"]):
                     print("update: True -->"+str(user_panel_details))
-                    update_user(inbound_id, user_panel_details, s)
-                   
+                    update_user(inbound_id, user_panel_details,s,
+                                INBOUNDS_FLOW.get(inbound_id, ""))
+
                 else:
                     print("update: False -->"+str(user_panel_details))
                 ss.remove(s)
-                
+
             elif (user_panel_details != None):
                 del_user(inbound_id, user_panel_details)
                 print("del:"+str(user_panel_details))
@@ -286,19 +292,19 @@ def sync_users(inbound_id, users_server, users_panel, users_panel_with_details):
             print("loding: {} % ".format(i*100/len(pss)))
             print("============================")
         for s in users_server:
-            add_user(inbound_id, s)
+            add_user(inbound_id, s, INBOUNDS_FLOW.get(inbound_id, ""))
 
 
 def reset_traffic_all_users():
     response = requests.post('{}/panel/inbound/resetAllClientTraffics/-1'.format(
-            PANEL_IP), cookies=cookies,verify=False)
+        PANEL_IP), cookies=cookies, verify=False)
     print("reset all traffic: "+response.text)
 
 
 def update_trrafic_on_server(inbound_id, panel_users):
 
     print("update trrafic on server")
-    #return True  #debug
+    # return True  #debug
     user_list = []
     for p in panel_users:
         if (p["up"]+p["down"])/(1024*1024) > MIN_USAGE_REPORT:
@@ -308,7 +314,8 @@ def update_trrafic_on_server(inbound_id, panel_users):
                 "inbound_id": inbound_id
             }
             user_list.append(user)
-            log.logger.info("update trrafic on server",extra={"id":user["id"],"inbound_id":inbound_id,"total":user["total"]})
+            log.logger.info("update trrafic on server", extra={
+                            "id": user["id"], "inbound_id": inbound_id, "total": user["total"], "panel_tag": PANEL_TAG})
 
     url = "{}/api/shadow/traffic/bulk".format(MAIN_SERVER[MAIN_SERVER_GROUPE])
     payload = json.dumps({
@@ -326,7 +333,7 @@ def update_trrafic_on_server(inbound_id, panel_users):
 
 
 def verify(inbound_id, users_server, users_panel):
-    result=False
+    result = False
     for s in users_server:
         find = True
 
@@ -338,14 +345,15 @@ def verify(inbound_id, users_server, users_panel):
                 find = False
         if find == False:
             print(p)
-            add_user(inbound_id, s)
-            result=True
+            add_user(inbound_id, s, INBOUNDS_FLOW.get(inbound_id, ""))
+            result = True
             ss.remove(s)
     return result
 
+
 def verifyExpired(inbound_id, users_server, users_panel):
 
-    result=False
+    result = False
     for p in users_panel:
         find = True
 
@@ -359,7 +367,7 @@ def verifyExpired(inbound_id, users_server, users_panel):
             print("==========================\ndel user -->"+str(p))
             time.sleep(1)
             del_user(inbound_id, s)
-            result=True
+            result = True
             ss.remove(s)
     return result
 
@@ -367,25 +375,27 @@ def verifyExpired(inbound_id, users_server, users_panel):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser("simple_example")
-    parser.add_argument('--ut', choices=['true', 'false'], default="true") # just update traffic
-    parser.add_argument('--uu', choices=['true', 'false'], default="true") # just update users
+    # just update traffic
+    parser.add_argument('--ut', choices=['true', 'false'], default="true")
+    # just update users
+    parser.add_argument('--uu', choices=['true', 'false'], default="true")
     args = parser.parse_args()
-    sl=random.randint(5,10)
-    print (f"Sleeping for {sl}")
+    sl = random.randint(5, 10)
+    print(f"Sleeping for {sl}")
     time.sleep(sl)
-    
+
     login()
-    
+
     ss = get_secrets()
 
     for inbound_id in INBOUNDS_IDS:
         ps, pss = get_user_list_from_panel(inbound_id)
 
         if len(ss) == 0 or len(pss) == 0 or len(ps) == 0:
-            print ("error in panel")
+            print("error in panel")
             exit(1)
 
-        if (args.ut == "true" ):
+        if (args.ut == "true"):
             update_trrafic_on_server(inbound_id, ps)
             reset_traffic_all_users()
 
@@ -394,14 +404,13 @@ if __name__ == '__main__':
             ss = get_secrets()
             ps, pss = get_user_list_from_panel(inbound_id)
 
-            for i in range(0,2):
+            for i in range(0, 2):
                 print("================= verifyExpired "+str(i))
-                verifyExpired(inbound_id,ss, ps) 
+                verifyExpired(inbound_id, ss, ps)
                 print("================= verifiacation: "+str(i))
-                verify(inbound_id,ss, ps)
+                verify(inbound_id, ss, ps)
 
-            
             print("================= reset trrafic on panel")
             restart_traffic_on_panel_user_by_user(inbound_id, ps)
-    
+
     os.system("systemctl restart x-ui.service")

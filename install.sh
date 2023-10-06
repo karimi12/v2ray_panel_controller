@@ -23,6 +23,8 @@ ufw allow 2052
 ufw allow 2053
 ufw allow 2083
 ufw allow 8080
+ufw allow 60000:61000/udp comment "mosh udp"
+
 
 ufw deny out from any to 10.0.0.0/8
 ufw deny out from any to 172.16.0.0/12
