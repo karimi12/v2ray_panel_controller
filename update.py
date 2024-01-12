@@ -16,7 +16,7 @@ import config
 import log
 
 
-# VERSION = 11
+# VERSION = 15
 PANEL_IP = config.PANEL_IP
 PANEL_TAG = config.PANEL_TAG
 MIN_USAGE_REPORT = config.MIN_USAGE_REPORT
@@ -63,13 +63,13 @@ def transform(secrets, k):
     for ts in secrets:
 
         tt = {}
-        tt["email"] = str(ts["id"])+"_"+k
+        tt["email"] = str(str(ts["id"])+"_"+k).strip()
         tt["id"] = ts["shadow_password"]
         tt["server_id"] = ts["id"]
 
         if BANDWITH_TYPE == "limted":
             tt["total"] = (ts.get("total_quota_limit", 0) -
-                           
+
                            ts.get("used_total_quota", 0)) * 1024*1024
         else:
             tt["total"] = ts.get("total_quota_limit", 0) * 1024*1024
@@ -121,10 +121,11 @@ def add_user(inbound_id, user, inbound_flow=""):
         "clients": [
             {
                 "id": user["id"],
+                "password": user["id"],
                 "flow": inbound_flow,
                 "email": user["email"]+"_"+str(inbound_id),
-                "limitIp":user["device"],
-                "totalGB":user["total"],
+                "limitIp": user["device"],
+                "totalGB": user["total"],
                 "enable": user["enable"],
                 "expiryTime": user["expiry_time"]
             }
@@ -149,8 +150,8 @@ def update_user(inbound_id, user_panel, user_server, inbound_flow=""):
                 "id": user_server["id"],
                 "flow": inbound_flow,
                 "email": user_server["email"]+"_"+str(inbound_id),
-                "limitIp":user_server["device"],
-                "totalGB":user_server["total"],
+                "limitIp": user_server["device"],
+                "totalGB": user_server["total"],
                 "enable": user_server["enable"],
                 "expiryTime": user_server["expiry_time"]
             }
@@ -162,8 +163,9 @@ def update_user(inbound_id, user_panel, user_server, inbound_flow=""):
         'settings': json.dumps(c)
     }
 
+    temp_id = user_panel["id"] if "id" in user_panel else user_panel["password"]
     response = requests.post(
-        '{}/panel/inbound/updateClient/{}'.format(PANEL_IP, user_panel["id"]),
+        '{}/panel/inbound/updateClient/{}'.format(PANEL_IP, temp_id),
         cookies=cookies,
         data=data,
         verify=False,
@@ -193,13 +195,30 @@ def del_user(inbound_id, user):
     print("delete: "+response.text)
 
 
+def getInbound(id,array):
+    for i in range(len(array.get("obj"))):
+        if array.get("obj")[i]["id"] == id:
+            return array.get("obj")[i]
+
 def get_user_list_from_panel(inbound_id):
 
     response = requests.post(
         '{}/panel/inbound/list'.format(PANEL_IP), cookies=cookies, verify=False)
     j = response .json()
-    return j.get("obj")[inbound_id-1]["clientStats"], json.loads(j.get("obj")[inbound_id-1]["settings"])["clients"]
+    p=getInbound(inbound_id,j)
+    return p["clientStats"], json.loads(p["settings"])["clients"]
 
+
+def xray_restart():
+    response = requests.post(
+        '{}/server/restartXrayService'.format(PANEL_IP), cookies=cookies)
+    print(response.json())
+
+
+def xray_stop():
+    response = requests.post(
+        '{}/server/stopXrayService'.format(PANEL_IP), cookies=cookies)
+    print(response.json())
 
 # def update_user_trrafic(inbound_id, user):
 
@@ -241,7 +260,7 @@ def restart_traffic_on_panel_user_by_user(inbound_id, users_panel):
             time.sleep(2)
 
         if (p["up"]+p["down"])/(1024*1024) > MIN_USAGE_REPORT*10:
-            print("*** WARNING: "+str(p))
+            print("*** WARNING *** Many mistake: "+str(p))
 
 
 def find_user_in_panel(panel_users, panel_user):
@@ -276,9 +295,11 @@ def sync_users(inbound_id, users_server, users_panel, users_panel_with_details):
                     restart_traffic_on_panel(inbound_id, p)
                     time.sleep(0.1)
 
-                if (s["id"] != user_panel_details["id"] or s["total"] != p["total"] or s["expiryTime"] != p["expiryTime"] or s["device"] != user_panel_details["limitIp"]):
+                temp_id = "id" if "id" in user_panel_details else "password"
+
+                if (s["id"] != user_panel_details[temp_id] or s["total"] != p["total"] or s["expiryTime"] != p["expiryTime"] or s["device"] != user_panel_details["limitIp"]):
                     print("update: True -->"+str(user_panel_details))
-                    update_user(inbound_id, user_panel_details,s,
+                    update_user(inbound_id, user_panel_details, s,
                                 INBOUNDS_FLOW.get(inbound_id, ""))
 
                 else:
@@ -302,11 +323,13 @@ def reset_traffic_all_users():
 
 
 def update_trrafic_on_server(inbound_id, panel_users):
-
+    """Send update trrafic on server as bulk to main server 
+    """
     print("update trrafic on server")
     # return True  #debug
     user_list = []
     for p in panel_users:
+
         if (p["up"]+p["down"])/(1024*1024) > MIN_USAGE_REPORT:
             user = {
                 "id": p["email"],
@@ -319,7 +342,7 @@ def update_trrafic_on_server(inbound_id, panel_users):
 
     url = "{}/api/shadow/traffic/bulk".format(MAIN_SERVER[MAIN_SERVER_GROUPE])
     payload = json.dumps({
-        "panel_tag": PANEL_TAG,
+        "panel_tag": PANEL_TAG+"_"+str(inbound_id),
         "usage_report": user_list
     })
     headers = {
@@ -330,6 +353,27 @@ def update_trrafic_on_server(inbound_id, panel_users):
 
     print("=========\n"+response.text+"\n=========")
     return "update" == response.text
+
+
+def remove_duplicates(inbound_id, json_array, ):
+    seen = set()
+    duplicates = set()
+    duplicate_items = []
+
+    key = "email"
+    for item in json_array:
+        item_key = item.get(key)
+        if item_key in seen:
+            duplicates.add(item_key)
+            duplicate_items.append(item)
+        else:
+            seen.add(item_key)
+
+    print("removed duplicated users:")
+    for  item in duplicate_items:
+        del_user(inbound_id, item)
+
+    return duplicate_items
 
 
 def verify(inbound_id, users_server, users_panel):
@@ -383,34 +427,37 @@ if __name__ == '__main__':
     sl = random.randint(5, 10)
     print(f"Sleeping for {sl}")
     time.sleep(sl)
-
     login()
-
+    if config.LOADBALCER_MODE:
+        xray_stop()
+    time.sleep(20)
     ss = get_secrets()
 
     for inbound_id in INBOUNDS_IDS:
         ps, pss = get_user_list_from_panel(inbound_id)
 
-        if len(ss) == 0 or len(pss) == 0 or len(ps) == 0:
+        if len(ss) == 0 or pss is None or len(ps) == 0:
+            add_user(inbound_id, ss[0], INBOUNDS_FLOW.get(inbound_id, ""))
             print("error in panel")
-            exit(1)
+            # exit(1)
 
         if (args.ut == "true"):
             update_trrafic_on_server(inbound_id, ps)
-            reset_traffic_all_users()
 
         if (args.uu == "true"):
             sync_users(inbound_id, ss, ps, pss)
             ss = get_secrets()
             ps, pss = get_user_list_from_panel(inbound_id)
-
+            remove_duplicates(inbound_id=inbound_id, json_array=ps)
             for i in range(0, 2):
-                print("================= verifyExpired "+str(i))
+                print("================= verifyExpired: "+str(i))
                 verifyExpired(inbound_id, ss, ps)
                 print("================= verifiacation: "+str(i))
                 verify(inbound_id, ss, ps)
 
             print("================= reset trrafic on panel")
             restart_traffic_on_panel_user_by_user(inbound_id, ps)
-
+    reset_traffic_all_users()
+    if config.LOADBALCER_MODE:
+        xray_restart()
     os.system("systemctl restart x-ui.service")

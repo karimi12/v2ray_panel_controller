@@ -1,0 +1,25 @@
+{
+      "tag": "proxy",
+      "protocol": "shadowsocks",
+      "settings": {
+        "servers": [
+          {
+            "address": "127.0.0.1",
+            "method": "aes-256-gcm",
+            "ota": false,
+            "password": "1234",
+            "port": 1234,
+            "level": 1
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp"
+      },
+      "mux": {
+        "enabled": false,
+        "concurrency": -1
+      }
+    }
+
+    ulimit -n 4096

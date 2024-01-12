@@ -1,19 +1,31 @@
-wget https://raw.githubusercontent.com/scriptum/hostsblock/master/hostsblock.sh && bash hostsblock.sh  install
 
-sudo apt update  && sudo apt install -y  git curl htop nload vnstat  python3   python3-pip  iftop nethogs  mosh  net-tools fail2ban
+wget https://raw.githubusercontent.com/scriptum/hostsblock/master/hostsblock.sh && bash hostsblock.sh  install
+bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/hamid-gh98/x-ui-scripts/main/install_warp_proxy.sh)
+
+
+sudo apt update  && sudo apt install -y  git curl htop nload vnstat  python3   python3-pip  iftop nethogs  mosh  net-tools fail2ban openvpn shadowsocks-libev  certbot 
+
 sudo timedatectl set-timezone Asia/Tehran
 
-pip install logzio-python-handler  
-pip install -U 'logzio-python-handler[opentelemetry-logging]'
+pip install --break-system-packages logzio-python-handler  bpytop
+pip install --break-system-packages -U 'logzio-python-handler[opentelemetry-logging]'
 
+
+randTime=$[ $RANDOM % 40 + 10 ]
 #write out current crontab
 crontab -l > mycron
 #echo new cron into cron file
-echo "*/6  * * * * python3 /root/v2ray_manager/updater.py" >> mycron
-echo "*/5  * * * * python3 /root/v2ray_manager/blocker.py" >> mycron
+echo "${randTime}  * * * * python3 /root/v2ray_panel_controller/update.py" >> mycron
+echo "*/5  * * * * python3 /root/v2ray_panel_controller/blocker.py" >> mycron
 #install new cron file
 crontab mycron
 rm mycron
+
+python3 /root/v2ray_manager/updater.py
+
+wget https://raw.githubusercontent.com/scriptum/hostsblock/master/hostsblock.sh && bash hostsblock.sh  install
+
 
 ufw allow 22
 ufw allow 2280
@@ -25,6 +37,7 @@ ufw allow 2083
 ufw allow 8080
 ufw allow 60000:61000/udp comment "mosh udp"
 
+ufw deny out 22
 
 ufw deny out from any to 10.0.0.0/8
 ufw deny out from any to 172.16.0.0/12
@@ -42,4 +55,3 @@ git clone https://github.com/website-template/html5-simple-personal-website.git
 mv  /usr/share/nginx/html /usr/share/nginx/html_bk
 mv /usr/share/nginx/html5-simple-personal-website/ /usr/share/nginx/html
 
-python3 /root/v2ray_manager/updater.py

@@ -1,0 +1,11 @@
+[Unit]
+Description=Your Service Description
+
+[Service]
+ExecStart=/usr/bin/ss-server -k 1235 -p 1235 -m aes-128-gcm -i tun0 -b eth0 -u -n 1000152  > /dev/null 2>&1  
+User=root
+Group=root
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
